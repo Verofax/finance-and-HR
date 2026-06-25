@@ -8,7 +8,7 @@ export default async function NewDealPage() {
   const supabase = await createClient();
 
   const [{ data: employees }, { data: fxRates }] = await Promise.all([
-    supabase.from("employees").select("id, full_name, employee_code").eq("status", "active").order("full_name"),
+    supabase.from("employees").select("id, full_name, employee_code, salary_currency").eq("status", "active").order("full_name"),
     supabase.from("fx_rates").select("currency, rate_to_aed"),
   ]);
 

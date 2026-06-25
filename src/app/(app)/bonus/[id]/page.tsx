@@ -11,7 +11,7 @@ export default async function EditDealPage({ params }: { params: Promise<{ id: s
 
   const [{ data: deal }, { data: employees }, { data: fxRates }] = await Promise.all([
     supabase.from("commission_deals").select("*").eq("id", id).maybeSingle(),
-    supabase.from("employees").select("id, full_name, employee_code").eq("status", "active").order("full_name"),
+    supabase.from("employees").select("id, full_name, employee_code, salary_currency").eq("status", "active").order("full_name"),
     supabase.from("fx_rates").select("currency, rate_to_aed"),
   ]);
 

@@ -3,13 +3,15 @@
 import { useMemo, useState } from "react";
 import {
   ORIGINATOR_PCT, CLOSER_PCT, SALES_HEAD_PCT, TRIPLE_ROLE_CAP_PCT,
-  bonusForDeal, formatMoney,
+  ALLOWED_INVOICE_CURRENCIES,
+  bonusForDeal, convertCurrency, formatMoneyDecimal, type FxMap,
 } from "@/lib/commission";
 
 interface Employee {
   id: string;
   full_name: string;
   employee_code: string;
+  salary_currency: string;
 }
 
 interface FxRate { currency: string; rate_to_aed: number }
@@ -32,8 +34,6 @@ interface InitialDeal {
   notes: string;
 }
 
-const CURRENCIES = ["AED", "SAR", "USD", "EUR", "GBP", "EGP", "INR"];
-
 export function DealForm({
   initial,
   employees,
@@ -55,13 +55,18 @@ export function DealForm({
   const [closer, setCloser] = useState(initial.deal_closer_id);
   const [head, setHead] = useState(initial.sales_head_id);
 
-  const fxMap = useMemo(() => {
+  const fxMap = useMemo<FxMap>(() => {
     const m = new Map<string, number>();
     for (const f of fxRates) m.set(f.currency, Number(f.rate_to_aed));
     return m;
   }, [fxRates]);
 
-  // Live commission preview
+  const empById = useMemo(() => {
+    const m = new Map<string, Employee>();
+    for (const e of employees) m.set(e.id, e);
+    return m;
+  }, [employees]);
+
   const preview = useMemo(() => {
     return bonusForDeal({
       id: "preview",
@@ -73,17 +78,9 @@ export function DealForm({
       deal_closer_id: closer || null,
       sales_head_id: head || null,
       status: "open",
-      fx_rate_to_aed: fxMap.get(currency) ?? 1,
     });
-  }, [currency, received, expenses, marketing, originator, closer, head, fxMap]);
+  }, [currency, received, expenses, marketing, originator, closer, head]);
 
-  const empById = useMemo(() => {
-    const m = new Map<string, Employee>();
-    for (const e of employees) m.set(e.id, e);
-    return m;
-  }, [employees]);
-
-  const totalPreviewAed = preview.reduce((s, p) => s + p.bonus_in_aed, 0);
   const netReceived = Math.max(received - Math.max(expenses - marketing, 0), 0);
 
   return (
@@ -104,10 +101,11 @@ export function DealForm({
                 <option value="archived">Archived</option>
               </select>
             </Field>
-            <Field label="Currency *">
+            <Field label="Invoice Currency *">
               <select name="currency" value={currency} onChange={(e) => setCurrency(e.target.value)} className="input-field">
-                {CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                {ALLOWED_INVOICE_CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
+              <p className="text-[10px] text-slate-400 mt-1">Invoicing limited to AED, SAR, USD</p>
             </Field>
             <Field label="Client Name *" className="md:col-span-2">
               <input type="text" name="client_name" required defaultValue={initial.client_name} className="input-field" />
@@ -120,7 +118,9 @@ export function DealForm({
 
         {/* Money */}
         <div className="section-card">
-          <h2 className="font-display text-lg font-extrabold text-navy-700 mb-4">Money <span className="text-sm font-normal text-slate-500 ml-2">(all in {currency})</span></h2>
+          <h2 className="font-display text-lg font-extrabold text-navy-700 mb-4">
+            Money <span className="text-sm font-normal text-slate-500 ml-2">(all in {currency})</span>
+          </h2>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <Field label="Invoice (ex VAT) *">
               <input type="number" step="0.01" name="invoice_amount_ex_vat" required value={invoiceAmount} onChange={(e) => setInvoiceAmount(Number(e.target.value))} className="input-field" />
@@ -130,7 +130,7 @@ export function DealForm({
             </Field>
             <Field label="Marketing Allowance">
               <input type="number" step="0.01" name="marketing_allowance" value={marketing} onChange={(e) => setMarketing(Number(e.target.value))} className="input-field" />
-              <p className="text-[10px] text-slate-400 mt-1">Offsets expenses (not deducted from net)</p>
+              <p className="text-[10px] text-slate-400 mt-1">Offsets expenses</p>
             </Field>
             <Field label="Amount Received *">
               <input type="number" step="0.01" name="amount_received" required value={received} onChange={(e) => setReceived(Number(e.target.value))} className="input-field" />
@@ -141,7 +141,7 @@ export function DealForm({
           </div>
           <div className="mt-4 p-3 rounded-lg text-sm bg-slate-50 border border-slate-200">
             <span className="text-slate-500">Net commissionable: </span>
-            <strong className="text-navy-700">{netReceived.toLocaleString("en")} {currency}</strong>
+            <strong className="text-navy-700">{netReceived.toLocaleString("en", { maximumFractionDigits: 2 })} {currency}</strong>
             <span className="text-slate-400 ml-2">= received − max(expenses − marketing, 0)</span>
           </div>
         </div>
@@ -161,7 +161,7 @@ export function DealForm({
             </Field>
           </div>
           <p className="text-xs text-slate-500 mt-3">
-            If the same person fills all three roles, the system caps their commission at <strong>{TRIPLE_ROLE_CAP_PCT}%</strong> (not the cumulative 7%) per policy.
+            If the same person fills all three roles, commission is capped at <strong>{TRIPLE_ROLE_CAP_PCT}%</strong> (not the cumulative 7%) per policy.
           </p>
         </div>
 
@@ -182,30 +182,40 @@ export function DealForm({
       {/* Live preview */}
       <aside className="space-y-4">
         <div className="section-card sticky" style={{ top: 16 }}>
-          <div className="text-[11px] uppercase tracking-wider font-bold text-navy-500 mb-2">Live Commission Preview</div>
-          <div className="font-display text-3xl font-extrabold text-navy-700 mb-1">
-            {totalPreviewAed > 0 ? formatMoney(totalPreviewAed) : "—"}
-          </div>
-          <p className="text-xs text-slate-500 mb-4">Total payable in AED (1 {currency} = {(fxMap.get(currency) ?? 1).toFixed(4)} AED)</p>
+          <div className="text-[11px] uppercase tracking-wider font-bold text-navy-500 mb-3">Live Commission Preview</div>
 
           {preview.length === 0 ? (
             <p className="text-sm text-slate-500 italic">Fill in amounts + roles to see the calculation.</p>
           ) : (
-            <ul className="space-y-3 text-sm">
+            <ul className="space-y-4">
               {preview.map((p) => {
                 const emp = empById.get(p.employee_id);
+                const payCurr = emp?.salary_currency || "AED";
+                // Convert invoice-currency bonus to staff's payment currency
+                const payAmount = convertCurrency(p.bonus_in_invoice_currency, p.invoice_currency, payCurr, fxMap);
                 return (
-                  <li key={p.employee_id} className="border-t border-slate-100 pt-3 first:border-t-0 first:pt-0">
-                    <div className="flex items-baseline justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="font-semibold text-navy-700 truncate">{emp?.full_name ?? "—"}</div>
-                        <div className="text-xs text-slate-500 capitalize">{p.roles.join(" + ")}</div>
-                      </div>
-                      <div className="text-right shrink-0">
-                        <div className="font-bold text-navy-700">{formatMoney(p.bonus_in_aed)}</div>
-                        <div className="text-[10px] text-slate-400">{p.percent_applied}% on {p.base_amount.toLocaleString("en", { maximumFractionDigits: 0 })} {p.base_currency}</div>
-                      </div>
+                  <li key={p.employee_id} className="border-t border-slate-100 pt-4 first:border-t-0 first:pt-0">
+                    <div className="font-semibold text-navy-700 mb-1">{emp?.full_name ?? "—"}</div>
+                    <div className="text-xs text-slate-500 capitalize mb-3">{p.roles.join(" + ")} · {p.percent_applied}%</div>
+
+                    {/* Earned in invoice currency */}
+                    <div className="text-sm">
+                      <div className="text-xs text-slate-400 uppercase tracking-wider font-semibold mb-1">Earned</div>
+                      <div className="font-mono">{p.bonus_in_invoice_currency.toLocaleString("en", { maximumFractionDigits: 2 })} <span className="text-slate-500">{p.invoice_currency}</span></div>
                     </div>
+
+                    {/* Payable in staff currency */}
+                    {payCurr !== p.invoice_currency && (
+                      <div className="text-sm mt-2">
+                        <div className="text-xs text-slate-400 uppercase tracking-wider font-semibold mb-1">Payable to {emp?.full_name?.split(" ")[0]}</div>
+                        <div className="font-bold text-emerald-700">{formatMoneyDecimal(payAmount, payCurr)}</div>
+                        <div className="text-[10px] text-slate-400">1 {p.invoice_currency} ≈ {(convertCurrency(1, p.invoice_currency, payCurr, fxMap)).toFixed(4)} {payCurr}</div>
+                      </div>
+                    )}
+                    {payCurr === p.invoice_currency && (
+                      <div className="text-xs text-slate-500 mt-1">Same as payment currency — no conversion needed</div>
+                    )}
+
                     {p.capped && (
                       <div className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 px-2 py-1 rounded mt-2">
                         ⚠ 5% cap applied (would have been 7% cumulative)
@@ -235,7 +245,7 @@ function EmployeeSelect({ name, value, onChange, employees }: { name: string; va
   return (
     <select name={name} value={value} onChange={(e) => onChange(e.target.value)} className="input-field">
       <option value="">— None —</option>
-      {employees.map((e) => <option key={e.id} value={e.id}>{e.full_name}</option>)}
+      {employees.map((e) => <option key={e.id} value={e.id}>{e.full_name} <span>({e.salary_currency})</span></option>)}
     </select>
   );
 }
