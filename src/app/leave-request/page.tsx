@@ -6,6 +6,12 @@ export const metadata = {
   robots: { index: false, follow: false },
 };
 
+// Always fetch the latest employee list + manager_email on every request.
+// Without this, Next.js caches the page at build time so manager updates in
+// the DB don't show up until the next deploy.
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export default async function LeaveRequestPage() {
   let employees: any[] = [];
   let setupError: string | null = null;
