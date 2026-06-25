@@ -36,19 +36,19 @@ on conflict (employee_code) do update set
 
 -- ============================================================================
 -- ANNUAL leave balances (from Excel)
--- entitlement_days = annual 24 (policy)
--- accrued_days = opening + leave_available from Excel (representing what's available to take)
--- taken_days = leave_taken from Excel
--- The remaining_days view will compute: accrued + carry_forward - taken - encashed
+-- Policy: 24 days/year entitlement; carry-forward from previous years allowed.
+-- accrued_days  = YTD-accrued this year (Excel "Leave available")
+-- carry_forward = brought in from previous years (Excel "Opening Leave")
+-- taken_days    = taken so far this year (Excel "Leave taken 2026")
+-- remaining (computed by view) = accrued + carry_forward - taken - encashed
 -- ============================================================================
 do $$
 declare
   this_year int := extract(year from current_date)::int;
 begin
   -- Format: (code, opening, available_this_year, taken_2026)
-  -- The Excel "Leave balance" = opening + available - taken, so we backfill accrued accordingly.
   insert into leave_balances (employee_id, year, leave_type, entitlement_days, accrued_days, taken_days, carry_forward_days)
-  select e.id, this_year, 'annual', 24, t.opening + t.available, t.taken, t.opening
+  select e.id, this_year, 'annual', 24, t.available, t.taken, t.opening
   from employees e
   join (values
     ('VFX-001', 48::numeric, 12::numeric, 0::numeric),
