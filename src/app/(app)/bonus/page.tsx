@@ -2,6 +2,7 @@ import { requirePermission, can } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
 import { aggregateByStaff, bonusForDeal, formatMoney, type DealInput } from "@/lib/commission";
+import { YearSelector } from "./year-selector";
 
 interface SearchParams { year?: string }
 
@@ -230,19 +231,3 @@ export default async function BonusPage({ searchParams }: { searchParams: Promis
   );
 }
 
-function YearSelector({ available, selected }: { available: number[]; selected: number }) {
-  const years = available.length > 0 ? available : [new Date().getFullYear()];
-  return (
-    <form>
-      <select
-        name="year"
-        defaultValue={selected}
-        className="input-field text-sm"
-        style={{ paddingTop: 8, paddingBottom: 8 }}
-        onChange={(e) => { (e.currentTarget.form as HTMLFormElement).submit(); }}
-      >
-        {years.map((y) => <option key={y} value={y}>{y}</option>)}
-      </select>
-    </form>
-  );
-}

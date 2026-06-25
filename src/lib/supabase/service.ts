@@ -9,9 +9,19 @@ import { createClient } from "@supabase/supabase-js";
 export function createServiceClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) {
+  if (!url) {
+    throw new Error("NEXT_PUBLIC_SUPABASE_URL is not set in .env.local");
+  }
+  if (!key) {
     throw new Error(
-      "SUPABASE_SERVICE_ROLE_KEY not set. Add it to .env.local from Supabase → Settings → API → service_role secret.",
+      "SUPABASE_SERVICE_ROLE_KEY is not set. In Supabase Dashboard → Settings → API, copy the 'service_role' secret (long key starting with eyJ...) and paste it into .env.local",
+    );
+  }
+  // Detect the placeholder text so users get a real error instead of a silent
+  // auth failure that returns no data.
+  if (key.startsWith("PASTE_") || key.includes("your-service-role")) {
+    throw new Error(
+      "SUPABASE_SERVICE_ROLE_KEY still contains the placeholder text. Replace it with the real key from Supabase → Settings → API → service_role secret.",
     );
   }
   return createClient(url, key, {

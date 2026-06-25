@@ -7,13 +7,26 @@ export const metadata = {
 };
 
 export default async function LeaveRequestPage() {
-  // Load active employees for the dropdown (service-role — public page, no login)
-  const supabase = createServiceClient();
-  const { data: employees } = await supabase
-    .from("employees")
-    .select("id, full_name, employee_code, country, manager_email")
-    .eq("status", "active")
-    .order("full_name", { ascending: true });
+  let employees: any[] = [];
+  let setupError: string | null = null;
+
+  try {
+    const supabase = createServiceClient();
+    const { data, error } = await supabase
+      .from("employees")
+      .select("id, full_name, employee_code, country, manager_email")
+      .eq("status", "active")
+      .order("full_name", { ascending: true });
+    if (error) {
+      setupError = `Database query failed: ${error.message}`;
+    } else if (!data || data.length === 0) {
+      setupError = "No employees found. Run supabase/seed_staff.sql in your Supabase SQL Editor to import the 18 staff.";
+    } else {
+      employees = data;
+    }
+  } catch (e: any) {
+    setupError = e?.message || "Server configuration error.";
+  }
 
   return (
     <div className="min-h-screen" style={{ background: "linear-gradient(135deg, #f6f9ff 0%, #dbe4f3 100%)" }}>
@@ -24,7 +37,30 @@ export default async function LeaveRequestPage() {
           <p className="text-sm text-slate-500">Your manager will receive an email and decide. You'll be notified once approved or rejected.</p>
         </header>
 
-        <LeaveRequestForm employees={employees ?? []} />
+        {setupError ? (
+          <div className="section-card">
+            <h2 className="font-display text-xl font-extrabold text-red-700 mb-3">⚠ Setup not complete</h2>
+            <p className="text-sm text-slate-700 mb-3">{setupError}</p>
+            <details className="text-xs text-slate-600">
+              <summary className="cursor-pointer font-semibold mb-2">Setup checklist</summary>
+              <ol className="list-decimal pl-5 space-y-1 mt-2">
+                <li>In Supabase dashboard → <strong>Settings → API</strong>, copy the <strong>service_role secret</strong> (long key starting with <code>eyJ...</code>)</li>
+                <li>Paste it into <code>D:\verofax-finance-app\.env.local</code> as <code>SUPABASE_SERVICE_ROLE_KEY=...</code></li>
+                <li>In Supabase <strong>SQL Editor</strong> run, in order:
+                  <ul className="list-disc pl-5 mt-1">
+                    <li><code>supabase/migration_002_leave.sql</code></li>
+                    <li><code>supabase/migration_003_commission.sql</code></li>
+                    <li><code>supabase/seed_staff.sql</code> ← imports the 18 real staff</li>
+                    <li><code>supabase/seed_commissions.sql</code></li>
+                  </ul>
+                </li>
+                <li>Restart dev server (Ctrl+C then <code>npm run dev</code>)</li>
+              </ol>
+            </details>
+          </div>
+        ) : (
+          <LeaveRequestForm employees={employees} />
+        )}
 
         <p className="text-xs text-slate-400 text-center mt-8">
           Verofax Finance Platform · Confidential internal use
