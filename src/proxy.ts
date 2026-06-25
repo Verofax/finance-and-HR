@@ -1,7 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 
-const PUBLIC_PREFIXES = ["/login", "/auth", "/_next", "/favicon"];
+const PUBLIC_PREFIXES = [
+  "/login",
+  "/auth",
+  "/_next",
+  "/favicon",
+  // Public leave-request flow — employees submit + managers approve without login
+  "/leave-request",
+  "/leave-decision",
+  "/api/leave-submit",
+];
 
 function isPublic(pathname: string): boolean {
   for (const p of PUBLIC_PREFIXES) {
