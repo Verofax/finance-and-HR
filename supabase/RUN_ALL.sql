@@ -12,6 +12,7 @@
 --   5. seed_commissions.sql           (11 commission deals from Excel)
 --   6. migration_005_data_topup.sql   (Mohammed Zain rename + Kaust investment)
 --   7. migration_006_leave_history.sql (balance fix + 3 new staff + Jan-Jun 2026 leaves)
+--   8. migration_007_submitter_email.sql (capture submitter email per leave request)
 -- ============================================================================
 
 
@@ -750,3 +751,27 @@ select _import_leave('VFX-020', 'sick',   '2026-06-08', '2026-06-08', 1);   -- H
 
 -- Clean up temporary function
 drop function if exists _import_leave(text, text, date, date, numeric, text);
+
+
+-- ############################################################################
+-- # FILE: supabase/migration_007_submitter_email.sql
+-- ############################################################################
+
+-- ============================================================================
+-- Migration 007 — Store submitter email per leave request
+-- ============================================================================
+-- The decision-notification email was being sent to employees.email, which
+-- might be NULL or set to the wrong address from a prior test. Capture the
+-- submitter's email on the leave_request row itself so decisions always go
+-- to whoever filled in the form.
+-- ============================================================================
+
+alter table leave_requests add column if not exists submitter_email text;
+
+-- Backfill any existing rows: copy the linked employee's email if we have one
+update leave_requests lr
+set submitter_email = e.email
+from employees e
+where lr.employee_id = e.id
+  and lr.submitter_email is null
+  and e.email is not null;

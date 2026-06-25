@@ -52,8 +52,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "No approval manager assigned. Contact HR." }, { status: 400 });
   }
 
-  // Capture employee email if not already on file (so future approval emails go to the right place)
-  if (!employee.email) {
+  // Always update employees.email to the latest one used — older entries may
+  // be stale. If you want to keep the original, change this to only-if-null.
+  if (employee.email !== body.employee_email) {
     await supabase.from("employees").update({ email: body.employee_email }).eq("id", employee.id);
   }
 
@@ -88,6 +89,7 @@ export async function POST(request: Request) {
       reason: body.reason || null,
       status: "pending",
       manager_email: employee.manager_email,
+      submitter_email: body.employee_email,  // captured per-request — used for decision emails
       submitted_via: "public_form",
       submitter_ip: ip,
       submitter_user_agent: ua,

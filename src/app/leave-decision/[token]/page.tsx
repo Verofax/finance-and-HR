@@ -7,6 +7,10 @@ export const metadata = {
   robots: { index: false, follow: false },
 };
 
+// Always render fresh — no caching of decision pages
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 interface PageProps {
   params: Promise<{ token: string }>;
   searchParams: Promise<{ action?: string; notes?: string; confirmed?: string }>;
@@ -14,7 +18,7 @@ interface PageProps {
 
 export default async function DecisionPage({ params, searchParams }: PageProps) {
   const { token } = await params;
-  const { action, confirmed } = await searchParams;
+  const { action, confirmed, notes } = await searchParams;
 
   const supabase = createServiceClient();
 
@@ -23,6 +27,7 @@ export default async function DecisionPage({ params, searchParams }: PageProps) 
     .from("leave_requests")
     .select(`
       id, approval_token, status, leave_type, start_date, end_date, days_count, reason, manager_email,
+      submitter_email,
       token_used_at, decided_by_email, decided_at, decision_notes,
       employees:employee_id (id, full_name, email)
     `)
@@ -39,6 +44,11 @@ export default async function DecisionPage({ params, searchParams }: PageProps) 
 
   const employee = Array.isArray(req.employees) ? req.employees[0] : (req.employees as any);
 
+  // Best email to use for sending the decision back to the requester:
+  // 1. submitter_email (captured per-request, always reflects who submitted THIS request)
+  // 2. employees.email (could be stale from prior tests)
+  const employeeNotifyEmail: string | null = req.submitter_email || employee?.email || null;
+
   // Already decided
   if (req.status !== "pending") {
     return (
@@ -47,6 +57,7 @@ export default async function DecisionPage({ params, searchParams }: PageProps) 
         color={req.status === "approved" ? "green" : "slate"}
       >
         <p>This request was <strong>{req.status}</strong>{req.decided_at ? ` on ${new Date(req.decided_at).toLocaleDateString("en", { dateStyle: "medium" })}` : ""}{req.decided_by_email ? ` by ${req.decided_by_email}` : ""}.</p>
+        {req.decision_notes && <p className="text-xs text-slate-500 italic mt-3">"{req.decision_notes}"</p>}
         <RequestSummary req={req} employee={employee} />
       </CenteredCard>
     );
@@ -65,6 +76,7 @@ export default async function DecisionPage({ params, searchParams }: PageProps) 
         token_used_at: nowIso,
         decided_by_email: req.manager_email,
         decided_at: nowIso,
+        decision_notes: notes || null,
       })
       .eq("id", req.id)
       .eq("status", "pending")  // race-safe — only proceed if still pending
@@ -91,16 +103,18 @@ export default async function DecisionPage({ params, searchParams }: PageProps) 
     }
 
     // Notify the employee
-    if (employee?.email) {
-      await sendLeaveDecisionToEmployee({
-        employeeEmail: employee.email,
-        employeeName: employee.full_name,
+    let emailResult: { ok: boolean; error?: string } = { ok: false, error: "No email on file" };
+    if (employeeNotifyEmail) {
+      emailResult = await sendLeaveDecisionToEmployee({
+        employeeEmail: employeeNotifyEmail,
+        employeeName: employee?.full_name || "Employee",
         decision,
         leaveType: req.leave_type,
         startDate: req.start_date,
         endDate: req.end_date,
         daysCount: Number(req.days_count),
         decisionBy: req.manager_email,
+        notes: notes || undefined,
       });
     }
 
@@ -109,7 +123,15 @@ export default async function DecisionPage({ params, searchParams }: PageProps) 
         headline={decision === "approved" ? "Approved ✓" : "Rejected ✕"}
         color={decision === "approved" ? "green" : "red"}
       >
-        <p>{employee?.full_name}'s leave was <strong>{decision}</strong>. They've been notified by email.</p>
+        <p>{employee?.full_name}'s leave was <strong>{decision}</strong>.</p>
+        {emailResult.ok ? (
+          <p className="text-xs text-slate-500 mt-3">Notification email sent to <strong>{employeeNotifyEmail}</strong>.</p>
+        ) : (
+          <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded p-3 mt-3">
+            ⚠ Decision saved, but email failed to send: {emailResult.error || "unknown error"}
+            {!employeeNotifyEmail && " (no email on file — please notify the employee manually)"}
+          </p>
+        )}
         {decision === "approved" && <p className="text-xs text-slate-500 mt-3">Their balance has been updated automatically.</p>}
         <RequestSummary req={req} employee={employee} />
       </CenteredCard>
@@ -135,6 +157,7 @@ export default async function DecisionPage({ params, searchParams }: PageProps) 
           endDate={req.end_date}
           daysCount={Number(req.days_count)}
           reason={req.reason}
+          notifyEmail={employeeNotifyEmail}
         />
 
         <p className="text-xs text-slate-400 text-center mt-8">
