@@ -45,6 +45,9 @@ alter table leave_balances add column if not exists carry_forward_days numeric(5
 -- Backfill existing rows
 update leave_balances set leave_type = 'annual' where leave_type is null;
 alter table leave_balances alter column leave_type set not null;
+
+-- Drop + re-add constraint (idempotent — safe to re-run)
+alter table leave_balances drop constraint if exists leave_type_valid;
 alter table leave_balances add constraint leave_type_valid check (
   leave_type in ('annual', 'sick', 'maternity', 'paternity', 'mourning', 'haj', 'unpaid', 'other')
 );
@@ -56,6 +59,7 @@ begin
     alter table leave_balances drop constraint leave_balances_employee_id_year_key;
   end if;
 end $$;
+alter table leave_balances drop constraint if exists leave_balances_emp_year_type_uniq;
 alter table leave_balances add constraint leave_balances_emp_year_type_uniq unique (employee_id, year, leave_type);
 
 -- 3. leave_requests — public submissions
