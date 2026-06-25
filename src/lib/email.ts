@@ -1,17 +1,42 @@
-import { Resend } from "resend";
+import nodemailer, { type Transporter } from "nodemailer";
 
-// Lazy-init so the app boots even if RESEND_API_KEY isn't set yet.
-let resend: Resend | null = null;
-function client(): Resend {
-  if (!resend) {
-    const key = process.env.RESEND_API_KEY;
-    if (!key) throw new Error("RESEND_API_KEY is not set in .env.local");
-    resend = new Resend(key);
+// ============================================================================
+// Email sender — Gmail SMTP via nodemailer
+// ============================================================================
+// Requires GMAIL_USER + GMAIL_APP_PASSWORD in .env.local.
+// The app password is a 16-char password generated at
+// https://myaccount.google.com/apppasswords (2FA must be on for the Gmail account)
+// ============================================================================
+
+let transporter: Transporter | null = null;
+function getTransport(): Transporter {
+  if (transporter) return transporter;
+
+  const user = process.env.GMAIL_USER;
+  const pass = process.env.GMAIL_APP_PASSWORD;
+
+  if (!user) {
+    throw new Error(
+      "GMAIL_USER is not set. Add your Gmail address (e.g. verofax1@gmail.com) to .env.local",
+    );
   }
-  return resend;
+  if (!pass || pass.includes("PASTE_") || pass.includes("your-app-password")) {
+    throw new Error(
+      "GMAIL_APP_PASSWORD is not set or is still the placeholder. " +
+      "Generate one at https://myaccount.google.com/apppasswords " +
+      "(2FA must be on for this Gmail account). Paste the 16-char password into .env.local.",
+    );
+  }
+
+  transporter = nodemailer.createTransport({
+    host: "smtp.gmail.com",
+    port: 465,
+    secure: true,
+    auth: { user, pass: pass.replace(/\s+/g, "") },  // strip spaces — Google shows the key with spaces but doesn't want them
+  });
+  return transporter;
 }
 
-const FROM = process.env.RESEND_FROM_EMAIL || "Verofax Finance <onboarding@resend.dev>";
 const APP_URL = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
 
 interface SendArgs {
@@ -23,14 +48,18 @@ interface SendArgs {
 
 async function send({ to, subject, html, replyTo }: SendArgs) {
   try {
-    const result = await client().emails.send({
-      from: FROM,
-      to: [to],
+    const user = process.env.GMAIL_USER!;
+    const fromName = process.env.GMAIL_FROM_NAME || "Verofax Finance";
+    const fromAddr = `${fromName} <${user}>`;
+
+    const info = await getTransport().sendMail({
+      from: fromAddr,
+      to,
       subject,
       html,
       ...(replyTo ? { replyTo } : {}),
     });
-    return { ok: true, id: result.data?.id };
+    return { ok: true, id: info.messageId };
   } catch (e: any) {
     console.error("[email] send failed", e);
     return { ok: false, error: e?.message || String(e) };
@@ -157,7 +186,7 @@ function escapeHtml(s: string): string {
 }
 
 // ============================================================================
-// Public API
+// Public API — same shape as before, just different transport
 // ============================================================================
 
 export async function sendLeaveRequestToManager(args: {
